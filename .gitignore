@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/
+
+# Outputs
+app/static/outputs/*
+!app/static/outputs/.gitkeep
+
+# Build
+release.zip

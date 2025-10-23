@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Azure OpenAI Translator</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b sticky top-0 z-50">
+      <div class="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
+        <img src="/static/favicon.svg" class="w-6 h-6" alt="logo" />
+        <h1 class="text-xl font-semibold">French → English Translator (Azure OpenAI + FastAPI)</h1>
+      </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-6 grid lg:grid-cols-2 gap-6">
+      <!-- Left: Upload/Input -->
+      <section class="bg-white shadow-sm rounded-2xl p-5 border">
+        <h2 class="text-lg font-semibold mb-4">Upload a file or paste French text</h2>
+
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">Choose a file (.pdf, .docx, .txt, .csv, .xlsx, .png, .jpg, .jpeg)</label>
+            <input id="fileInput" type="file" accept=".pdf,.docx,.txt,.csv,.xlsx,.png,.jpg,.jpeg"
+                   class="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-100 hover:file:bg-slate-200" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1">Or paste text</label>
+            <textarea id="textInput" rows="8" class="w-full rounded-xl border p-3 focus:outline-none focus:ring focus:border-slate-400" placeholder="Collez votre texte français ici..."></textarea>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <button id="translateBtn" class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50">Translate</button>
+            <span id="status" class="text-sm text-slate-600"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Output -->
+      <section class="bg-white shadow-sm rounded-2xl p-5 border flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-semibold">Translated Output</h2>
+          <div class="flex gap-2">
+            <a id="dlTxt" class="hidden px-3 py-1.5 rounded-lg border hover:bg-slate-50" download>TXT</a>
+            <a id="dlDocx" class="hidden px-3 py-1.5 rounded-lg border hover:bg-slate-50" download>DOCX</a>
+            <a id="dlPdf" class="hidden px-3 py-1.5 rounded-lg border hover:bg-slate-50" download>PDF</a>
+            <a id="dlCsv" class="hidden px-3 py-1.5 rounded-lg border hover:bg-slate-50" download>CSV</a>
+            <a id="dlXlsx" class="hidden px-3 py-1.5 rounded-lg border hover:bg-slate-50" download>XLSX</a>
+          </div>
+        </div>
+
+        <div id="output" class="flex-1 rounded-xl border bg-slate-50 p-4 overflow-y-auto" style="min-height: 360px;"></div>
+      </section>
+    </main>
+
+    <footer class="max-w-6xl mx-auto px-4 pb-10 text-sm text-slate-500">
+      <p>Uses your Azure OpenAI <strong>GPT-4o</strong> deployment for translation & OCR. Configure via <code>.env</code> (local) or App Service Application settings.</p>
+    </footer>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const textInput = document.getElementById('textInput');
+    const translateBtn = document.getElementById('translateBtn');
+    const statusEl = document.getElementById('status');
+    const outputEl = document.getElementById('output');
+    const dlTxt = document.getElementById('dlTxt');
+    const dlDocx = document.getElementById('dlDocx');
+    const dlPdf = document.getElementById('dlPdf');
+    const dlCsv = document.getElementById('dlCsv');
+    const dlXlsx = document.getElementById('dlXlsx');
+
+    function hideDownloads() {
+      [dlTxt, dlDocx, dlPdf, dlCsv, dlXlsx].forEach(a => {
+        a.classList.add('hidden');
+        a.removeAttribute('href');
+      });
+    }
+
+    function renderTableFromFlat(block) {
+      const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length === 0) return '';
+      const rows = lines.map(l => l.split('|').map(c => c.trim()));
+      let thead = '';
+      let tbody = '';
+      if (rows.length >= 2) {
+        thead = '<thead><tr>' + rows[0].map(h => `<th class="px-3 py-2 border bg-slate-100 text-left text-sm font-semibold">${DOMPurify.sanitize(h)}</th>`).join('') + '</tr></thead>';
+        const bodyRows = rows.slice(1).map(r => '<tr>' + r.map(c => `<td class="px-3 py-2 border align-top text-sm">${DOMPurify.sanitize(c)}</td>`).join('') + '</tr>').join('');
+        tbody = `<tbody>${bodyRows}</tbody>`;
+      } else {
+        tbody = '<tbody>' + rows.map(r => '<tr>' + r.map(c => `<td class="px-3 py-2 border align-top text-sm">${DOMPurify.sanitize(c)}</td>`).join('') + '</tr>').join('') + '</tbody>';
+      }
+      return `<div class="overflow-x-auto my-4"><table class="table-auto border w-full rounded-lg">${thead}${tbody}</table></div>`;
+    }
+
+    function renderSmart(mdText) {
+      const SHEET_RX = /^=+\\s*Sheet:\\s*(.+?)\\s*=+$/i;
+      const blocks = mdText.split(/\\n\\s*\\n/);
+      let htmlParts = [];
+      let pendingTableLines = [];
+
+      function flushTable() {
+        if (pendingTableLines.length) {
+          const block = pendingTableLines.join('\\n');
+          htmlParts.push(renderTableFromFlat(block));
+          pendingTableLines = [];
+        }
+      }
+
+      for (const raw of blocks) {
+        const b = raw.trim();
+        if (!b) continue;
+        const lines = b.split('\\n');
+
+        const m = b.match(SHEET_RX);
+        if (m) {
+          flushTable();
+          htmlParts.push(`<h3 class="text-base font-semibold mt-4">${DOMPurify.sanitize(m[1])}</h3>`);
+          continue;
+        }
+
+        const mostlyPipes = lines.filter(l => l.includes('|')).length >= Math.max(2, Math.floor(lines.length * 0.6));
+        if (mostlyPipes) {
+          pendingTableLines.push(...lines.filter(l => l.includes('|')));
+          flushTable();
+          continue;
+        }
+
+        flushTable();
+        const html = DOMPurify.sanitize(marked.parse(b, { breaks: true }));
+        htmlParts.push(html);
+      }
+      flushTable();
+      return htmlParts.join('\\n');
+    }
+
+    translateBtn.addEventListener('click', async () => {
+      try {
+        hideDownloads();
+        statusEl.textContent = 'Translating…';
+        outputEl.innerHTML = '';
+
+        const form = new FormData();
+        if (fileInput.files[0]) form.append('file', fileInput.files[0]);
+        if (textInput.value.trim()) form.append('text', textInput.value.trim());
+
+        if (!form.has('file') && !form.has('text')) {
+          statusEl.textContent = 'Please upload a file or paste text.';
+          return;
+        }
+
+        const res = await fetch('/api/translate', { method: 'POST', body: form });
+        const isJson = res.headers.get('content-type')?.includes('application/json');
+        if (!res.ok) {
+          const err = isJson ? await res.json().catch(() => ({})) : {};
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+
+        const data = isJson ? await res.json() : {};
+        const md = data.translated_text || '';
+        const html = renderSmart(md);
+        outputEl.innerHTML = html;
+
+        if (data.downloads) {
+          if (data.downloads.txt) { dlTxt.href = data.downloads.txt; dlTxt.classList.remove('hidden'); }
+          if (data.downloads.docx) { dlDocx.href = data.downloads.docx; dlDocx.classList.remove('hidden'); }
+          if (data.downloads.pdf) { dlPdf.href = data.downloads.pdf; dlPdf.classList.remove('hidden'); }
+          if (data.downloads.csv) { dlCsv.href = data.downloads.csv; dlCsv.classList.remove('hidden'); }
+          if (data.downloads.xlsx) { dlXlsx.href = data.downloads.xlsx; dlXlsx.classList.remove('hidden'); }
+        }
+
+        statusEl.textContent = 'Done';
+      } catch (e) {
+        statusEl.textContent = (e && e.message) ? e.message : 'Error';
+        console.error(e);
+      }
+    });
+  </script>
+</body>
+</html>
