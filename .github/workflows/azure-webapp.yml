@@ -7,7 +7,7 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: translatorapp1.azurewebsites.net   # <-- change me
-  PYTHON_VERSION: '3.10'
+  PYTHON_VERSION: '3.11'
 
 jobs:
   build-and-deploy:
