@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: translatorapp1   # <-- App Service name only (no domain)
+  AZURE_WEBAPP_NAME: bhhhh   # <-- App Service name only (no domain)
   PYTHON_VERSION: "3.11"
 
 jobs:
