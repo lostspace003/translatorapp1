@@ -1,4 +1,4 @@
-# Azure OpenAI Translator (FastAPI + Tailwind) - French to English
+# Azure OpenAI Translator (FastAPI + Tailwind) - French to English ONLY
 
 Translate **French → English** using **Azure OpenAI (GPT‑4o)**. Upload PDFs, DOCX, TXT, or images (OCR via Azure OpenAI (GPT‑4 vision, e.g., gpt‑4o)). See results inline and download as **TXT**, **DOCX**, or **PDF**. Ships with **GitHub Actions** CI/CD to **Azure App Service (B1)**.
 
